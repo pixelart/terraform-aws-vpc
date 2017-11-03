@@ -8,6 +8,11 @@ variable "cidr" {
   default     = ""
 }
 
+variable "enable_ipv6" {
+  description = "Requests an Amazon-provided IPv6 CIDR block with a /56 prefix length for the VPC.Also creates an egress only internet gateway for private subnets"
+  default     = false
+}
+
 variable "instance_tenancy" {
   description = "A tenancy option for instances launched into the VPC"
   default     = "default"
@@ -18,8 +23,18 @@ variable "public_subnets" {
   default     = []
 }
 
+variable "public_ipv6_subnet_netnums" {
+  description = "A list of public subnet netnums inside the VPC. Must match with the length of public_subnets"
+  default     = []
+}
+
 variable "private_subnets" {
   description = "A list of private subnets inside the VPC"
+  default     = []
+}
+
+variable "private_ipv6_subnet_netnums" {
+  description = "A list of private subnet netnums inside the VPC. Must match with the length of private_subnets"
   default     = []
 }
 

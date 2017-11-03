@@ -6,10 +6,11 @@ terraform {
 # VPC
 ######
 resource "aws_vpc" "this" {
-  cidr_block           = "${var.cidr}"
-  instance_tenancy     = "${var.instance_tenancy}"
-  enable_dns_hostnames = "${var.enable_dns_hostnames}"
-  enable_dns_support   = "${var.enable_dns_support}"
+  cidr_block                       = "${var.cidr}"
+  assign_generated_ipv6_cidr_block = "${var.enable_ipv6}"
+  instance_tenancy                 = "${var.instance_tenancy}"
+  enable_dns_hostnames             = "${var.enable_dns_hostnames}"
+  enable_dns_support               = "${var.enable_dns_support}"
 
   tags = "${merge(var.tags, var.vpc_tags, map("Name", format("%s", var.name)))}"
 }
@@ -70,6 +71,14 @@ resource "aws_route" "public_internet_gateway" {
   gateway_id             = "${aws_internet_gateway.this.id}"
 }
 
+resource "aws_route" "public_internet_gateway_ipv6" {
+  count = "${length(var.public_subnets) > 0 && var.enable_ipv6 ? 1 : 0}"
+
+  route_table_id              = "${aws_route_table.public.id}"
+  destination_ipv6_cidr_block = "::/0"
+  gateway_id                  = "${aws_internet_gateway.this.id}"
+}
+
 #################
 # Private routes
 # There are so many route-tables as the largest amount of subnets of each type (really?)
@@ -89,10 +98,12 @@ resource "aws_route_table" "private" {
 resource "aws_subnet" "public" {
   count = "${length(var.public_subnets)}"
 
-  vpc_id                  = "${aws_vpc.this.id}"
-  cidr_block              = "${var.public_subnets[count.index]}"
-  availability_zone       = "${element(var.azs, count.index)}"
-  map_public_ip_on_launch = "${var.map_public_ip_on_launch}"
+  vpc_id                          = "${aws_vpc.this.id}"
+  cidr_block                      = "${var.public_subnets[count.index]}"
+  ipv6_cidr_block                 = "${var.enable_ipv6 ? cidrsubnet(aws_vpc.this.ipv6_cidr_block, 8, element(var.public_ipv6_subnet_netnums, count.index)) : ""}"
+  assign_ipv6_address_on_creation = "${var.enable_ipv6}"
+  availability_zone               = "${element(var.azs, count.index)}"
+  map_public_ip_on_launch         = "${var.map_public_ip_on_launch}"
 
   tags = "${merge(var.tags, var.public_subnet_tags, map("Name", format("%s-public-%s", var.name, element(var.azs, count.index))))}"
 }
@@ -103,9 +114,11 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   count = "${length(var.private_subnets)}"
 
-  vpc_id            = "${aws_vpc.this.id}"
-  cidr_block        = "${var.private_subnets[count.index]}"
-  availability_zone = "${element(var.azs, count.index)}"
+  vpc_id                          = "${aws_vpc.this.id}"
+  cidr_block                      = "${var.private_subnets[count.index]}"
+  ipv6_cidr_block                 = "${var.enable_ipv6 ? cidrsubnet(aws_vpc.this.ipv6_cidr_block, 8, element(var.private_ipv6_subnet_netnums, count.index)) : ""}"
+  assign_ipv6_address_on_creation = "${var.enable_ipv6}"
+  availability_zone               = "${element(var.azs, count.index)}"
 
   tags = "${merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%s", var.name, element(var.azs, count.index))))}"
 }
@@ -192,6 +205,23 @@ resource "aws_route" "private_nat_gateway" {
   route_table_id         = "${element(aws_route_table.private.*.id, count.index)}"
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = "${element(aws_nat_gateway.this.*.id, count.index)}"
+}
+
+###############################
+# Egress Only Internet Gateway
+###############################
+resource "aws_egress_only_internet_gateway" "this" {
+  count = "${var.enable_ipv6}"
+
+  vpc_id = "${aws_vpc.this.id}"
+}
+
+resource "aws_route" "aws_egress_only_internet_gateway" {
+  count = "${var.enable_ipv6 ? length(var.azs) : 0}"
+
+  route_table_id              = "${element(aws_route_table.private.*.id, count.index)}"
+  destination_ipv6_cidr_block = "::/0"
+  egress_only_gateway_id      = "${element(aws_egress_only_internet_gateway.this.*.id, count.index)}"
 }
 
 ######################
